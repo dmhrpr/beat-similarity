@@ -69,45 +69,45 @@ def main():
     with wave.open(file_name, 'rb') as wave_file:
         frame_rate = wave_file.getframerate()
         num_frames = wave_file.getnframes()
+        num_channels = wave_file.getnchannels()
+        sample_width = wave_file.getsampwidth()
+
+        # Read audio data
         data = wave_file.readframes(num_frames)
-        data = np.array(struct.unpack('{n}h'.format(n=num_frames), data))
-    
-    # Get onset times
-    onset_times = get_onset_times(data, frame_rate)
+        samples = np.frombuffer(data, dtype=get_numpy_format(sample_width, num_channels))
+        samples = samples.reshape(-1, num_channels)
 
-    # Split audio file into beats
-    beats = []
-    for i in range(len(onset_times)-1):
-        start = int(onset_times[i] * frame_rate)
-        end = int(onset_times[i+1] * frame_rate)
-        beat = data[start:end]
-        beats.append(beat)
+        # Get onset times
+        onset_times = get_onset_times(samples[:, 0], frame_rate)
 
-    # Compute MFCC features for each beat
-    mfccs = []
-    for i in range(len(beats)):
-        mfcc = get_mfcc_features(beats[i], frame_rate)
-        mfccs.append(mfcc)
-    
-    # Calculate distance between each beat and the first beat
-    distances = []
-    for i in range(len(mfccs)):
-        distance = get_distance(mfccs[0], mfccs[i])
-        distances.append(distance)
-    
-    # Sort beats by their similarity to the first beat
-    sorted_indices = np.argsort(distances)
-    sorted_beats = [beats[i] for i in sorted_indices]
+        # Get MFCC features
+        feature_vectors = []
+        for i in range(len(onset_times)):
+            onset_sample = int(onset_times[i] * frame_rate)
+            offset_sample = int(onset_times[i+1] * frame_rate) if i < len(onset_times)-1 else None
+            segment = samples[onset_sample:offset_sample, 0]
+            feature_vectors.append(get_mfcc_features(segment, frame_rate))
 
-    # Concatenate beats in order of similarity to the first beat
-    output_data = np.concatenate(sorted_beats)
-    
-    # Save the concatenated audio file
-    output_file_name = "output_audio_file.wav"
-    with wave.open(output_file_name, 'wb') as output_file:
-        output_file.setnchannels(1)
-        output_file.setsampwidth(2)
-        output_file.setframerate(frame_rate)
-        output_file.writeframes(output_data.astype(np.int16))
+        # Get distances
+        distances = []
+        for i in range(1, len(feature_vectors)):
+            distance = get_distance(feature_vectors[0], feature_vectors[i])
+            distances.append((distance, i))
 
-main()
+        # Sort by distance
+        distances.sort(key=lambda x: x[0])
+
+        # Concatenate segments in order
+        output = np.concatenate((samples[int(onset_times[0]*frame_rate):], samples[int(onset_times[distances[0][1]]*frame_rate):]))
+        for i in range(1, len(distances)):
+            output = np.concatenate((output, samples[int(onset_times[distances[i][1]]*frame_rate):]))
+
+        # Write output to file
+        with wave.open("output.wav", 'wb') as output_file:
+            output_file.setnchannels(num_channels)
+            output_file.setsampwidth(sample_width)
+            output_file.setframerate(frame_rate)
+            output_file.writeframes(output.tobytes())
+
+if __name__ == "__main__":
+    main()
