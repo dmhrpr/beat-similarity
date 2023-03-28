@@ -27,9 +27,8 @@ new_order = [0]
 for i in range(len(beats)-2):
     current = new_order[-1]
     remaining = [x for x in range(len(beats)-1) if x not in new_order]
-    similarity = order[current][remaining]
-    similarity_flat = np.ravel(similarity)
-    next_beat = remaining[np.argmin(similarity_flat)]
+    similarity = order[0][remaining]
+    next_beat = remaining[np.argmin(similarity)]
     new_order.append(next_beat)
 
 # Concatenate beats in new order
